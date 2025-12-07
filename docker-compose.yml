@@ -1,0 +1,13 @@
+services:
+  node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude-node
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./agent-shared-files:/workspace:ro
+    stdin_open: true
+    tty: true
+    command: /bin/bash
