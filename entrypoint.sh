@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ALLOWED_DOMAINS_FILE="/etc/allowed-domains.txt"
+
 # Setup firewall rules with sudo (container must have NET_ADMIN capability)
 echo "Setting up firewall rules..."
 
@@ -16,20 +18,32 @@ if [ -n "$GATEWAY_IP" ]; then
     sudo iptables -A OUTPUT -d $GATEWAY_IP -j ACCEPT
 fi
 
-# Resolve and allow anthropic.com domains
-for domain in anthropic.com claude.ai api.anthropic.com console.anthropic.com; do
-    echo "Resolving $domain..."
-    IPS=$(dig +short $domain @8.8.8.8 | grep -E '^[0-9.]+$')
-    for ip in $IPS; do
-        echo "Allowing $domain -> $ip"
-        sudo iptables -A OUTPUT -d $ip -j ACCEPT
-    done
-done
+# Allow DNS temporarily so we can resolve domains
+sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+# Resolve and allow domains from the allowlist
+if [ -f "$ALLOWED_DOMAINS_FILE" ]; then
+    while IFS= read -r domain || [ -n "$domain" ]; do
+        domain=$(echo "$domain" | xargs)
+        [[ -z "$domain" || "$domain" == \#* ]] && continue
+        echo "Resolving $domain..."
+        IPS=$(dig +short "$domain" @8.8.8.8 | grep -E '^[0-9.]+$')
+        for ip in $IPS; do
+            echo "  Allowing $domain -> $ip"
+            sudo iptables -A OUTPUT -d "$ip" -j ACCEPT
+        done
+    done < "$ALLOWED_DOMAINS_FILE"
+else
+    echo "WARNING: $ALLOWED_DOMAINS_FILE not found. No domains will be allowed."
+fi
+
+# Remove temporary DNS rule
+sudo iptables -D OUTPUT -p udp --dport 53 -j ACCEPT
 
 # Drop all other outbound traffic
 sudo iptables -A OUTPUT -j DROP
 
-echo "Firewall rules applied. Only Anthropic/Claude domains and Docker host are allowed."
+echo "Firewall rules applied. Only allowlisted domains and Docker host are reachable."
 
 # Execute the command as claude user
 exec "$@"

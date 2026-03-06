@@ -8,6 +8,7 @@ services:
       - NET_ADMIN
     volumes:
       - ./agent-shared-files:/workspace:ro
+      - ./allowed-domains.txt:/etc/allowed-domains.txt:ro
     stdin_open: true
     tty: true
     command: /bin/bash
