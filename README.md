@@ -2,6 +2,13 @@
 
 A sandboxed Docker container for running Claude Code agents. Network-isolated (only Anthropic APIs allowed), auto-authenticates with your existing Claude credentials.
 
+## Prerequisites
+
+- **Docker** — [Install Docker Desktop](https://docs.docker.com/get-docker/)
+- **Claude CLI** — installed and authenticated (`npm install -g @anthropic-ai/claude-code`, then run `claude` once to log in)
+
+claudebox uses your local Claude credentials (Keychain on macOS, `~/.claude/.credentials.json` on Linux) to authenticate inside the container. No credentials are baked into the image.
+
 ## Install
 
 ```bash
