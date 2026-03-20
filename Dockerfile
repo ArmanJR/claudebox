@@ -1,17 +1,20 @@
 FROM node:20-bookworm
 
+ARG CLAUDE_CODE_VERSION=latest
+
 # Install iptables and claude-code
 RUN apt-get update && \
     apt-get install -y iptables dnsutils sudo && \
-    npm install -g @anthropic-ai/claude-code@2.0.60 && \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -s /bin/bash claude && \
-    echo "claude ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    echo "claude ALL=(ALL) NOPASSWD: /usr/sbin/iptables, /usr/sbin/ip6tables" >> /etc/sudoers
 
 # Create entrypoint script to setup firewall rules
 COPY entrypoint.sh /entrypoint.sh
+COPY allowed-domains.txt /etc/allowed-domains.txt
 RUN chmod 755 /entrypoint.sh
 
 WORKDIR /workspace

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env.claude"
+ENV_FILE="${PWD}/.env.claude"
 CREDENTIALS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
 PLATFORM="$(uname -s)"
 
 log() { echo "[setup-auth] $*" >&2; }
 die() { echo "[setup-auth] ERROR: $*" >&2; exit 1; }
+
+# Helper: extract a field from piped JSON via node
+json_field() { node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).claudeAiOauth?.$1||$2))"; }
 
 # ---------------------------------------------------------------------------
 # Read raw credential JSON from platform store
@@ -32,11 +34,10 @@ read_raw_credential() {
 is_token_expired() {
     local raw_json="$1"
     local expires_at
-    expires_at=$(echo "$raw_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth'].get('expiresAt',0))" 2>/dev/null) \
-        || return 0
+    expires_at=$(echo "$raw_json" | json_field expiresAt 0 2>/dev/null) || return 0
     if [ "$expires_at" -gt 0 ] 2>/dev/null; then
         local now_ms
-        now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
+        now_ms=$(node -e "process.stdout.write(String(Date.now()))")
         [ "$now_ms" -ge "$expires_at" ] && return 0
     fi
     return 1
@@ -90,16 +91,15 @@ extract_token() {
     raw_json=$(read_raw_credential) || die "Failed to read credentials."
 
     local access_token expires_at
-    access_token=$(echo "$raw_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null) \
+    access_token=$(echo "$raw_json" | json_field accessToken "''" 2>/dev/null) \
         || die "Failed to parse accessToken from credential JSON."
 
     [ -n "$access_token" ] || die "Extracted access token is empty."
 
-    expires_at=$(echo "$raw_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth'].get('expiresAt',0))" 2>/dev/null) \
-        || expires_at=0
+    expires_at=$(echo "$raw_json" | json_field expiresAt 0 2>/dev/null) || expires_at=0
     if [ "$expires_at" -gt 0 ] 2>/dev/null; then
         local now_ms remaining_hrs
-        now_ms=$(python3 -c "import time; print(int(time.time()*1000))")
+        now_ms=$(node -e "process.stdout.write(String(Date.now()))")
         remaining_hrs=$(( (expires_at - now_ms) / 3600000 ))
         log "Token valid for ~${remaining_hrs}h"
     fi

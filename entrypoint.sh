@@ -40,14 +40,13 @@ sudo iptables -A OUTPUT -o lo -j ACCEPT
 # Allow established connections
 sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# Allow traffic to Docker host (gateway IP)
+# Allow DNS to Docker gateway (internal DNS) and external resolver for domain resolution
 GATEWAY_IP=$(ip route | grep default | awk '{print $3}')
 if [ -n "$GATEWAY_IP" ]; then
-    echo "Allowing traffic to Docker host: $GATEWAY_IP"
-    sudo iptables -A OUTPUT -d $GATEWAY_IP -j ACCEPT
+    echo "Allowing DNS to Docker gateway: $GATEWAY_IP"
+    sudo iptables -A OUTPUT -d $GATEWAY_IP -p udp --dport 53 -j ACCEPT
+    sudo iptables -A OUTPUT -d $GATEWAY_IP -p tcp --dport 53 -j ACCEPT
 fi
-
-# Allow DNS temporarily so we can resolve domains
 sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 
 # Resolve and allow domains from the allowlist
@@ -69,8 +68,10 @@ fi
 # Remove temporary DNS rule
 sudo iptables -D OUTPUT -p udp --dport 53 -j ACCEPT
 
-# Drop all other outbound traffic
+# Drop all other outbound traffic (IPv4 + IPv6)
 sudo iptables -A OUTPUT -j DROP
+sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+sudo ip6tables -A OUTPUT -j DROP
 
 echo "Firewall rules applied. Only allowlisted domains and Docker host are reachable."
 
