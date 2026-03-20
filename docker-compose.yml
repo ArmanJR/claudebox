@@ -1,12 +1,16 @@
 services:
-  node:
+  claude-node:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: claude-node
     cap_add:
       - NET_ADMIN
+    env_file:
+      - path: .env.claude
+        required: false
     volumes:
+      - ${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json:/run/claude-credentials:ro
       - ./agent-shared-files:/workspace:ro
       - ./allowed-domains.txt:/etc/allowed-domains.txt:ro
     stdin_open: true

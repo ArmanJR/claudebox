@@ -1,5 +1,34 @@
 #!/bin/bash
 
+# ---------------------------------------------------------------------------
+# Auth: resolve CLAUDE_CODE_OAUTH_TOKEN
+#   1. Already set via env_file / environment  → use it (macOS path)
+#   2. Mounted credentials file exists          → extract from it (Linux path)
+#   3. Neither                                  → fail with instructions
+# ---------------------------------------------------------------------------
+CREDENTIALS_MOUNT="/run/claude-credentials"
+
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    if [ -f "$CREDENTIALS_MOUNT" ]; then
+        echo "Reading OAuth token from mounted credentials file..."
+        CLAUDE_CODE_OAUTH_TOKEN=$(node -e "
+            const creds = JSON.parse(require('fs').readFileSync('$CREDENTIALS_MOUNT', 'utf8'));
+            const token = creds.claudeAiOauth && creds.claudeAiOauth.accessToken;
+            if (!token) { console.error('No accessToken found in credentials file'); process.exit(1); }
+            process.stdout.write(token);
+        ") || { echo "ERROR: Failed to parse credentials file."; exit 1; }
+        export CLAUDE_CODE_OAUTH_TOKEN
+    else
+        echo "ERROR: No authentication found."
+        echo ""
+        echo "  Linux users:  credentials are mounted automatically if you have"
+        echo "                run 'claude login' on this machine."
+        echo ""
+        echo "  macOS users:  run ./setup-auth.sh once (Keychain can't be mounted)."
+        exit 1
+    fi
+fi
+
 ALLOWED_DOMAINS_FILE="/etc/allowed-domains.txt"
 
 # Setup firewall rules with sudo (container must have NET_ADMIN capability)
