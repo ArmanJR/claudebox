@@ -1,12 +1,14 @@
 # claudebox
 
-Claude in a box.
+Claude in a box
 
-## Why
+<img width="2781" height="1331" alt="Gemini_Generated_Image_3bck2g3bck2g3bck" src="https://github.com/user-attachments/assets/86776f7e-f717-4d5d-92b9-87bfc57a3dad" />
 
-- **Two ways to use it**: Run prompts from your terminal as a CLI tool, or plug it into an existing Docker Compose stack as a plug-and-play service. No setup beyond `docker` and `claude`.
-- **Uses your Claude subscription**: No API key needed. Authenticates with your existing Claude credentials, making it ideal for personal use without extra costs.
-- **Full agent, maximum isolation**: Claude gets all its tools (file editing, bash, code analysis) inside the container, while having zero access to your machine or the internet beyond Anthropic's APIs.
+## Why?
+
+- **Use it however you want**: Run Claude from your terminal as a CLI, or drop it into an existing Docker Compose stack as a service.
+- **No API key, no extra billing**: claudebox uses your existing Claude subscription and authenticates with your current Claude credentials, so personal use feels seamless.
+- **Real agent, strong isolation**: Claude gets its full toolset inside the container—file editing, shell access, code analysis, and more; without access to your host machine or the open internet beyond Anthropic’s APIs.
 
 ## Prerequisites
 
