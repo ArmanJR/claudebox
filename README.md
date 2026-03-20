@@ -5,77 +5,61 @@ A sandboxed Docker container for running Claude Code agents. Network-isolated (o
 ## Prerequisites
 
 - **Docker** — [Install Docker Desktop](https://docs.docker.com/get-docker/)
-- **Claude CLI** — installed and authenticated (`npm install -g @anthropic-ai/claude-code`, then run `claude` once to log in)
+- **Claude CLI** — installed and authenticated (`curl -fsSL https://claude.ai/install.sh | bash`, then run `claude` once to log in)
 
-claudebox uses your local Claude credentials (Keychain on macOS, `~/.claude/.credentials.json` on Linux) to authenticate inside the container. No credentials are baked into the image.
+claudebox uses your Claude subscription. It reads local credentials (Keychain on macOS, `~/.claude/.credentials.json` on Linux) to authenticate inside the container.
 
-## Install
+---
+
+## Use as a CLI tool
+
+**For:** running prompts and agentic tasks in a sandboxed container from your terminal.
+
+### Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/install.sh | bash
 ```
 
-Then:
+### Usage
 
 ```bash
-claudebox server                        # Start HTTP API server
-claudebox prompt "explain DNS"          # One-shot prompt
-claudebox stop                          # Stop server
-claudebox logs                          # View logs
-claudebox update                        # Update CLI
+claudebox prompt "explain how DNS works"    # run a single prompt
+claudebox server                            # start the HTTP API server
+claudebox stop                              # stop the server
+claudebox logs                              # view server logs
+claudebox status                            # check if server is running
+claudebox update                            # update the CLI
 ```
 
-Works on macOS and Linux. Handles authentication automatically — extracts credentials from Keychain (macOS) or credentials file (Linux), and refreshes expired tokens before launching the container.
+Works on macOS and Linux. Handles authentication automatically and refreshes expired tokens before launching the container.
 
-See `claudebox help` for all options.
+### Prompt flags
 
-## Quick Start (manual)
+```bash
+claudebox prompt "explain DNS"              # plain text output (default)
+claudebox prompt --json "explain DNS"       # full JSON output
+claudebox prompt --verbose "explain DNS"    # container logs + output
+```
 
-> For a simpler experience, use the `claudebox` CLI above instead.
+### Environment variables
 
-### Standalone (no docker-compose needed)
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLAUDEBOX_PORT` | `3000` | Host port |
+| `CLAUDEBOX_IMAGE` | `ghcr.io/armanjr/claudebox:latest` | Docker image |
+| `CLAUDEBOX_NAME` | `claudebox` | Container name |
+| `CLAUDE_CODE_OAUTH_TOKEN` | — | Skip auto-detection, use this token directly |
+
+---
+
+## Use as a service
+
+**For:** adding Claude as an agent alongside other services in your Docker Compose stack.
+
+### Add to your docker-compose.yml
 
 **Linux:**
-```bash
-# Start the server
-docker run -d --cap-add NET_ADMIN -p 3000:3000 \
-  -v ~/.claude/.credentials.json:/run/claude-credentials:ro \
-  ghcr.io/armanjr/claudebox:latest
-
-# Query it
-curl -X POST http://localhost:3000/prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "your prompt"}'
-```
-
-**macOS:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/setup-auth.sh | bash
-source .env.claude
-
-docker run -d --cap-add NET_ADMIN -p 3000:3000 \
-  -e CLAUDE_CODE_OAUTH_TOKEN \
-  ghcr.io/armanjr/claudebox:latest
-```
-
-**One-shot** (skip the server, run a single prompt and exit):
-```bash
-# Linux
-docker run --rm --cap-add NET_ADMIN \
-  -v ~/.claude/.credentials.json:/run/claude-credentials:ro \
-  ghcr.io/armanjr/claudebox:latest \
-  claude -p --output-format json --dangerously-skip-permissions "your prompt"
-
-# macOS (after running setup-auth.sh and source .env.claude)
-docker run --rm --cap-add NET_ADMIN \
-  -e CLAUDE_CODE_OAUTH_TOKEN \
-  ghcr.io/armanjr/claudebox:latest \
-  claude -p --output-format json --dangerously-skip-permissions "your prompt"
-```
-
-### Adding to an existing Docker Compose
-
-**Linux** — credentials are mounted automatically, zero config:
 
 ```yaml
 services:
@@ -89,7 +73,7 @@ services:
       - ~/.claude/.credentials.json:/run/claude-credentials:ro
 ```
 
-**macOS** — Keychain can't be mounted, so run `setup-auth.sh` once to extract the token (re-run if it expires, typically months):
+**macOS** — Keychain can't be mounted, so extract the token first (re-run when it expires):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/setup-auth.sh | bash
@@ -108,17 +92,14 @@ services:
         required: true
 ```
 
-> `setup-auth.sh` works on both macOS and Linux. Linux users can use it as an alternative to the volume mount approach.
-
 Then `docker compose up -d`. Other services in the same network reach Claude at `http://claudebox:3000`.
 
-## HTTP API
+### HTTP API
 
-### `POST /prompt`
+#### `POST /prompt`
 
 Send a prompt to Claude and get a JSON response.
 
-**Request body:**
 ```json
 {
   "prompt": "your prompt here",
@@ -136,17 +117,18 @@ All fields in `options` are optional.
 
 **Response:** Claude Code's JSON output (includes `result`, `session_id`, `usage`, `total_cost_usd`, etc.)
 
-### `GET /health`
+#### `GET /health`
 
 Returns `{"status": "ok", "activeRequests": 0}`.
 
-### Environment variables
+#### Server environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | `3000` | Server listen port |
 | `MAX_CONCURRENT` | `4` | Max parallel Claude processes |
-| `CLAUDEBOX_PORT` | `3000` | Host port mapping (docker-compose) |
+
+---
 
 ## How It Works
 
@@ -160,7 +142,7 @@ Returns `{"status": "ok", "activeRequests": 0}`.
 -v /path/to/allowed-domains.txt:/etc/allowed-domains.txt:ro
 ```
 
-**Workspace** — `/workspace` is writable so Claude can create and edit files. Files in `context/` are mounted read-only at `/workspace/context` for reference. Put your `CLAUDE.md` and any context files there.
+**Workspace** — `/workspace` is writable so Claude can create and edit files. Mount context files read-only at `/workspace/context` for reference (put your `CLAUDE.md` there).
 
 ## Configuration
 
@@ -168,9 +150,10 @@ Returns `{"status": "ok", "activeRequests": 0}`.
 |---|---|
 | `claudebox` | CLI wrapper — handles auth, token refresh, and Docker lifecycle |
 | `install.sh` | One-liner installer for the `claudebox` CLI |
+| `setup-auth.sh` | Token extraction for manual / docker-compose setup |
 | `allowed-domains.txt` | Outbound domain allowlist (one per line, baked into image, override via volume mount) |
 | `context/` | Read-only context files mounted at `/workspace/context` |
-| `.env.claude` | OAuth token (generated by `setup-auth.sh` for manual setup, gitignored) |
+| `.env.claude` | OAuth token (generated by `setup-auth.sh`, gitignored) |
 
 ## Limitations
 
