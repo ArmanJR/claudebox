@@ -81,23 +81,7 @@ services:
 
 > `setup-auth.sh` works on both macOS and Linux. Linux users can use it as an alternative to the volume mount approach.
 
-### Running a task
-
-The container starts an HTTP server on port 3000 by default.
-
-```bash
-docker compose up -d
-
-# From the host
-curl -X POST http://localhost:3000/prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "explain this codebase"}'
-
-# From another container in the same compose network
-curl -X POST http://claudebox:3000/prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "explain this codebase"}'
-```
+Then `docker compose up -d`. Other services in the same network reach Claude at `http://claudebox:3000`.
 
 ## HTTP API
 
