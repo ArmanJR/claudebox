@@ -31,8 +31,15 @@ docker run -d --cap-add NET_ADMIN -p 3000:3000 \
 
 **One-shot** (skip the server, run a single prompt and exit):
 ```bash
+# Linux
 docker run --rm --cap-add NET_ADMIN \
   -v ~/.claude/.credentials.json:/run/claude-credentials:ro \
+  ghcr.io/armanjr/claudebox:latest \
+  claude -p --output-format json --dangerously-skip-permissions "your prompt"
+
+# macOS (after running setup-auth.sh and source .env.claude)
+docker run --rm --cap-add NET_ADMIN \
+  -e CLAUDE_CODE_OAUTH_TOKEN \
   ghcr.io/armanjr/claudebox:latest \
   claude -p --output-format json --dangerously-skip-permissions "your prompt"
 ```
@@ -47,6 +54,8 @@ services:
     image: ghcr.io/armanjr/claudebox:latest
     cap_add:
       - NET_ADMIN
+    ports:
+      - "3000:3000"
     volumes:
       - ~/.claude/.credentials.json:/run/claude-credentials:ro
 ```
@@ -63,6 +72,8 @@ services:
     image: ghcr.io/armanjr/claudebox:latest
     cap_add:
       - NET_ADMIN
+    ports:
+      - "3000:3000"
     env_file:
       - path: .env.claude
         required: true
