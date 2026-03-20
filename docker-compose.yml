@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     cap_add:
       - NET_ADMIN
+    ports:
+      - "${CLAUDEBOX_PORT:-3000}:3000"
     env_file:
       - path: .env.claude
         required: false
@@ -13,5 +15,3 @@ services:
       - ${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json:/run/claude-credentials:ro
       - ./context:/workspace/context:ro
       - ./allowed-domains.txt:/etc/allowed-domains.txt:ro
-    stdin_open: true
-    tty: true

@@ -8,10 +8,15 @@ A sandboxed Docker container for running Claude Code agents. Network-isolated (o
 
 **Linux:**
 ```bash
-docker run --rm --cap-add NET_ADMIN \
+# Start the server
+docker run -d --cap-add NET_ADMIN -p 3000:3000 \
   -v ~/.claude/.credentials.json:/run/claude-credentials:ro \
-  ghcr.io/armanjr/claudebox:latest \
-  claude --dangerously-skip-permissions --output-format json --print "your prompt"
+  ghcr.io/armanjr/claudebox:latest
+
+# Query it
+curl -X POST http://localhost:3000/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "your prompt"}'
 ```
 
 **macOS:**
@@ -19,10 +24,17 @@ docker run --rm --cap-add NET_ADMIN \
 curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/setup-auth.sh | bash
 source .env.claude
 
-docker run --rm --cap-add NET_ADMIN \
+docker run -d --cap-add NET_ADMIN -p 3000:3000 \
   -e CLAUDE_CODE_OAUTH_TOKEN \
+  ghcr.io/armanjr/claudebox:latest
+```
+
+**One-shot** (skip the server, run a single prompt and exit):
+```bash
+docker run --rm --cap-add NET_ADMIN \
+  -v ~/.claude/.credentials.json:/run/claude-credentials:ro \
   ghcr.io/armanjr/claudebox:latest \
-  claude --dangerously-skip-permissions --output-format json --print "your prompt"
+  claude -p --output-format json --dangerously-skip-permissions "your prompt"
 ```
 
 ### Adding to an existing Docker Compose
@@ -60,12 +72,57 @@ services:
 
 ### Running a task
 
+The container starts an HTTP server on port 3000 by default.
+
 ```bash
 docker compose up -d
 
-docker exec <container> bash -c \
-  'claude --dangerously-skip-permissions --output-format json --print "your prompt here"'
+# From the host
+curl -X POST http://localhost:3000/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "explain this codebase"}'
+
+# From another container in the same compose network
+curl -X POST http://claudebox:3000/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "explain this codebase"}'
 ```
+
+## HTTP API
+
+### `POST /prompt`
+
+Send a prompt to Claude and get a JSON response.
+
+**Request body:**
+```json
+{
+  "prompt": "your prompt here",
+  "options": {
+    "model": "sonnet",
+    "maxTurns": 10,
+    "maxBudgetUsd": 1.0,
+    "systemPrompt": "you are a helpful assistant",
+    "allowedTools": ["Read", "Edit", "Bash"]
+  }
+}
+```
+
+All fields in `options` are optional.
+
+**Response:** Claude Code's JSON output (includes `result`, `session_id`, `usage`, `total_cost_usd`, etc.)
+
+### `GET /health`
+
+Returns `{"status": "ok", "activeRequests": 0}`.
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | Server listen port |
+| `MAX_CONCURRENT` | `4` | Max parallel Claude processes |
+| `CLAUDEBOX_PORT` | `3000` | Host port mapping (docker-compose) |
 
 ## How It Works
 

@@ -6,6 +6,7 @@ on:
     paths:
       - Dockerfile
       - entrypoint.sh
+      - server.js
       - allowed-domains.txt
       - .github/workflows/publish-image.yml
   release:

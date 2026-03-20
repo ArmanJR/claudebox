@@ -15,6 +15,7 @@ RUN useradd -m -s /bin/bash claude && \
 # Create entrypoint script to setup firewall rules
 COPY entrypoint.sh /entrypoint.sh
 COPY allowed-domains.txt /etc/allowed-domains.txt
+COPY server.js /opt/claudebox/server.js
 RUN chmod 755 /entrypoint.sh
 
 WORKDIR /workspace
@@ -22,5 +23,7 @@ RUN chown claude:claude /workspace
 
 USER claude
 
+EXPOSE 3000
+
 ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
-CMD ["/bin/bash"]
+CMD ["node", "/opt/claudebox/server.js"]
