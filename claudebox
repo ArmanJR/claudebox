@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLAUDEBOX_VERSION="0.1.0"
+CLAUDEBOX_IMAGE="${CLAUDEBOX_IMAGE:-ghcr.io/armanjr/claudebox:latest}"
+CLAUDEBOX_PORT="${CLAUDEBOX_PORT:-3000}"
+CLAUDEBOX_NAME="${CLAUDEBOX_NAME:-claudebox}"
+CLAUDEBOX_REPO="https://raw.githubusercontent.com/ArmanJR/claudebox/main"
+
+PLATFORM="$(uname -s)"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+log()  { printf '[claudebox] %s\n' "$*" >&2; }
+die()  { printf '[claudebox] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# JSON helpers — zero external dependencies (no node/python)
+# Works for the known credential JSON structure from Claude CLI.
+# ---------------------------------------------------------------------------
+json_string() { sed -n 's/.*"'"$1"'":"\([^"]*\)".*/\1/p' | head -1; }
+json_number() { sed -n 's/.*"'"$1"'":\([0-9]*\).*/\1/p' | head -1; }
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+# Check token expiration in raw credential JSON.
+# If expired, run the platform-appropriate login command.
+# Returns the (possibly refreshed) raw JSON on stdout.
+ensure_valid_credentials() {
+    local raw_json="$1" login_cmd="$2"
+
+    local expires_at now_s expires_s
+    expires_at=$(printf '%s' "$raw_json" | json_number expiresAt)
+
+    if [ -n "$expires_at" ] && [ "$expires_at" -gt 0 ] 2>/dev/null; then
+        now_s=$(date +%s)
+        expires_s=$((expires_at / 1000))
+
+        if [ "$now_s" -ge "$expires_s" ]; then
+            log "Token expired. Re-authenticating..."
+            command -v claude >/dev/null 2>&1 \
+                || die "Claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
+            $login_cmd || die "'$login_cmd' failed."
+            return 1  # signal: credentials were refreshed, caller should re-read
+        else
+            local remaining_hrs=$(( (expires_s - now_s) / 3600 ))
+            log "Token valid for ~${remaining_hrs}h"
+        fi
+    fi
+    return 0
+}
+
+# macOS: extract OAuth token from Keychain, refreshing if expired.
+get_token_darwin() {
+    local raw_json
+    raw_json=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) \
+        || die "No Claude credentials in Keychain. Run 'claude' first to authenticate."
+
+    if ! ensure_valid_credentials "$raw_json" "claude setup-token"; then
+        raw_json=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) \
+            || die "Still no credentials after re-auth."
+    fi
+
+    local token
+    token=$(printf '%s' "$raw_json" | json_string accessToken)
+    [ -n "$token" ] || die "Could not extract accessToken from credentials."
+    printf '%s' "$token"
+}
+
+# Linux: validate credentials file, refreshing if expired.
+ensure_credentials_linux() {
+    local creds="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+    [ -f "$creds" ] || die "No credentials at $creds. Run 'claude login' first."
+
+    local raw_json
+    raw_json=$(cat "$creds")
+
+    if ! ensure_valid_credentials "$raw_json" "claude login"; then
+        [ -f "$creds" ] || die "Still no credentials after re-auth."
+    fi
+
+    printf '%s' "$creds"
+}
+
+# Populate DOCKER_AUTH_ARGS array based on platform.
+# Precedence: explicit env var > Keychain (macOS) > credentials file (Linux).
+build_auth_args() {
+    DOCKER_AUTH_ARGS=()
+
+    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+        log "Using CLAUDE_CODE_OAUTH_TOKEN from environment"
+        DOCKER_AUTH_ARGS+=(-e "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}")
+        return
+    fi
+
+    case "$PLATFORM" in
+        Darwin)
+            local token
+            token=$(get_token_darwin)
+            DOCKER_AUTH_ARGS+=(-e "CLAUDE_CODE_OAUTH_TOKEN=${token}")
+            ;;
+        Linux)
+            local creds
+            creds=$(ensure_credentials_linux)
+            DOCKER_AUTH_ARGS+=(-v "${creds}:/run/claude-credentials:ro")
+            ;;
+        *)
+            die "Unsupported platform: $PLATFORM"
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+preflight() {
+    command -v docker >/dev/null 2>&1 || die "Docker not found. Install Docker Desktop first."
+    docker info >/dev/null 2>&1 || die "Docker daemon not running. Start Docker Desktop first."
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+cmd_server() {
+    preflight
+    build_auth_args
+
+    # Clean up existing container with same name
+    if docker ps -aq -f name="^${CLAUDEBOX_NAME}$" 2>/dev/null | grep -q .; then
+        log "Removing existing '${CLAUDEBOX_NAME}' container..."
+        docker rm -f "$CLAUDEBOX_NAME" >/dev/null 2>&1 || true
+    fi
+
+    local container_id
+    container_id=$(docker run -d \
+        --name "$CLAUDEBOX_NAME" \
+        --cap-add NET_ADMIN \
+        -p "${CLAUDEBOX_PORT}:3000" \
+        "${DOCKER_AUTH_ARGS[@]}" \
+        "$CLAUDEBOX_IMAGE")
+
+    log "Server started on port ${CLAUDEBOX_PORT} (container: ${container_id:0:12})"
+    log "Health: curl http://localhost:${CLAUDEBOX_PORT}/health"
+    log "Stop:   claudebox stop"
+}
+
+cmd_prompt() {
+    [ -n "${1:-}" ] || die "Usage: claudebox prompt \"your prompt\""
+    preflight
+    build_auth_args
+
+    docker run --rm \
+        --cap-add NET_ADMIN \
+        "${DOCKER_AUTH_ARGS[@]}" \
+        "$CLAUDEBOX_IMAGE" \
+        claude -p --output-format json --dangerously-skip-permissions "$1"
+}
+
+cmd_stop() {
+    if docker ps -q -f name="^${CLAUDEBOX_NAME}$" 2>/dev/null | grep -q .; then
+        docker stop "$CLAUDEBOX_NAME" >/dev/null
+        docker rm "$CLAUDEBOX_NAME" >/dev/null
+        log "Stopped."
+    else
+        log "No running claudebox container found."
+    fi
+}
+
+cmd_logs() {
+    if [ $# -eq 0 ]; then
+        docker logs --tail 100 "$CLAUDEBOX_NAME"
+    else
+        docker logs "$@" "$CLAUDEBOX_NAME"
+    fi
+}
+
+cmd_status() {
+    if docker ps -q -f name="^${CLAUDEBOX_NAME}$" 2>/dev/null | grep -q .; then
+        local port
+        port=$(docker port "$CLAUDEBOX_NAME" 3000 2>/dev/null | head -1 | cut -d: -f2)
+        log "Running on port ${port:-unknown}"
+        if [ -n "$port" ]; then
+            curl -s "http://localhost:${port}/health" 2>/dev/null && echo
+        fi
+    else
+        log "Not running."
+    fi
+}
+
+cmd_update() {
+    local self_path
+    self_path=$(realpath "${BASH_SOURCE[0]}")
+
+    log "Updating claudebox..."
+    local tmp
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+
+    curl -fsSL "${CLAUDEBOX_REPO}/claudebox" -o "$tmp" || die "Download failed."
+    chmod +x "$tmp"
+
+    if [ -w "$self_path" ]; then
+        mv "$tmp" "$self_path"
+    else
+        log "Need sudo to update ${self_path}"
+        sudo mv "$tmp" "$self_path"
+    fi
+    log "Updated to $(bash "$self_path" version)."
+}
+
+cmd_version() {
+    echo "claudebox ${CLAUDEBOX_VERSION}"
+}
+
+cmd_help() {
+    cat <<HELP
+claudebox ${CLAUDEBOX_VERSION} — sandboxed Claude Code agents
+
+Usage:
+  claudebox server              Start the HTTP API server (default)
+  claudebox prompt "text"       Run a single prompt and exit
+  claudebox stop                Stop the running server
+  claudebox logs [--follow]     Show container logs
+  claudebox status              Check if server is running
+  claudebox update              Update claudebox CLI
+  claudebox version             Show version
+
+Environment variables:
+  CLAUDEBOX_PORT                Host port (default: 3000)
+  CLAUDEBOX_IMAGE               Docker image (default: ghcr.io/armanjr/claudebox:latest)
+  CLAUDEBOX_NAME                Container name (default: claudebox)
+  CLAUDE_CODE_OAUTH_TOKEN       Skip auto-detection, use this token directly
+
+Examples:
+  claudebox server
+  claudebox prompt "explain how DNS works"
+  claudebox stop
+  CLAUDEBOX_PORT=3001 claudebox server
+HELP
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+case "${1:-help}" in
+    server)   shift; cmd_server "$@" ;;
+    prompt)   shift; cmd_prompt "$@" ;;
+    stop)     cmd_stop ;;
+    logs)     shift; cmd_logs "$@" ;;
+    status)   cmd_status ;;
+    update)   cmd_update ;;
+    version)  cmd_version ;;
+    help|--help|-h) cmd_help ;;
+    *)        die "Unknown command: $1 (run 'claudebox help')" ;;
+esac

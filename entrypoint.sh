@@ -40,13 +40,19 @@ sudo iptables -A OUTPUT -o lo -j ACCEPT
 # Allow established connections
 sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-# Allow DNS to Docker gateway (internal DNS) and external resolver for domain resolution
+# Allow DNS to all configured nameservers and Docker gateway
+for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf); do
+    echo "Allowing DNS to nameserver: $ns"
+    sudo iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+    sudo iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+done
 GATEWAY_IP=$(ip route | grep default | awk '{print $3}')
 if [ -n "$GATEWAY_IP" ]; then
     echo "Allowing DNS to Docker gateway: $GATEWAY_IP"
-    sudo iptables -A OUTPUT -d $GATEWAY_IP -p udp --dport 53 -j ACCEPT
-    sudo iptables -A OUTPUT -d $GATEWAY_IP -p tcp --dport 53 -j ACCEPT
+    sudo iptables -A OUTPUT -d "$GATEWAY_IP" -p udp --dport 53 -j ACCEPT
+    sudo iptables -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport 53 -j ACCEPT
 fi
+# Temporary: allow DNS to external resolver for domain resolution (removed after)
 sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 
 # Resolve and allow domains from the allowlist

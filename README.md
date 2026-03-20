@@ -2,7 +2,27 @@
 
 A sandboxed Docker container for running Claude Code agents. Network-isolated (only Anthropic APIs allowed), auto-authenticates with your existing Claude credentials.
 
-## Quick Start
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/install.sh | bash
+```
+
+Then:
+
+```bash
+claudebox server                        # Start HTTP API server
+claudebox prompt "explain DNS"          # One-shot prompt
+claudebox stop                          # Stop server
+claudebox logs                          # View logs
+claudebox update                        # Update CLI
+```
+
+Works on macOS and Linux. Handles authentication automatically — extracts credentials from Keychain (macOS) or credentials file (Linux), and refreshes expired tokens before launching the container.
+
+See `claudebox help` for all options.
+
+## Quick Start (manual)
 
 ### Standalone (no docker-compose needed)
 

@@ -4,7 +4,7 @@ ARG CLAUDE_CODE_VERSION=latest
 
 # Install iptables and claude-code
 RUN apt-get update && \
-    apt-get install -y iptables dnsutils sudo && \
+    apt-get install -y iptables iproute2 dnsutils sudo && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
     rm -rf /var/lib/apt/lists/*
 
