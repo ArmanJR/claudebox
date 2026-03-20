@@ -8,11 +8,12 @@ CLAUDEBOX_NAME="${CLAUDEBOX_NAME:-claudebox}"
 CLAUDEBOX_REPO="https://raw.githubusercontent.com/ArmanJR/claudebox/main"
 
 PLATFORM="$(uname -s)"
+QUIET=false
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-log()  { printf '[claudebox] %s\n' "$*" >&2; }
+log()  { "$QUIET" || printf '[claudebox] %s\n' "$*" >&2; }
 die()  { printf '[claudebox] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
@@ -149,15 +150,40 @@ cmd_server() {
 }
 
 cmd_prompt() {
-    [ -n "${1:-}" ] || die "Usage: claudebox prompt \"your prompt\""
+    local output_format="text" verbose=false prompt=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --json)       output_format="json" ;;
+            --verbose|-v) verbose=true ;;
+            -*)           die "Unknown flag: $1" ;;
+            *)            prompt="$1" ;;
+        esac
+        shift
+    done
+
+    [ -n "$prompt" ] || die "Usage: claudebox prompt \"your prompt\" [--json] [--verbose]"
     preflight
+
+    if ! "$verbose"; then
+        QUIET=true
+    fi
+
     build_auth_args
 
-    docker run --rm \
-        --cap-add NET_ADMIN \
-        "${DOCKER_AUTH_ARGS[@]}" \
-        "$CLAUDEBOX_IMAGE" \
-        claude -p --output-format json --dangerously-skip-permissions "$1"
+    if "$verbose"; then
+        docker run --rm \
+            --cap-add NET_ADMIN \
+            "${DOCKER_AUTH_ARGS[@]}" \
+            "$CLAUDEBOX_IMAGE" \
+            claude -p --output-format "$output_format" --dangerously-skip-permissions "$prompt"
+    else
+        docker run --rm \
+            --cap-add NET_ADMIN \
+            "${DOCKER_AUTH_ARGS[@]}" \
+            "$CLAUDEBOX_IMAGE" \
+            claude -p --output-format "$output_format" --dangerously-skip-permissions "$prompt" 2>/dev/null
+    fi
 }
 
 cmd_stop() {
@@ -221,13 +247,17 @@ cmd_help() {
 claudebox ${CLAUDEBOX_VERSION} — sandboxed Claude Code agents
 
 Usage:
-  claudebox server              Start the HTTP API server (default)
+  claudebox server              Start the HTTP API server
   claudebox prompt "text"       Run a single prompt and exit
   claudebox stop                Stop the running server
   claudebox logs [--follow]     Show container logs
   claudebox status              Check if server is running
   claudebox update              Update claudebox CLI
   claudebox version             Show version
+
+Prompt flags:
+  --json                        Output full JSON instead of plain text
+  --verbose, -v                 Show container logs and full output
 
 Environment variables:
   CLAUDEBOX_PORT                Host port (default: 3000)
@@ -238,6 +268,7 @@ Environment variables:
 Examples:
   claudebox server
   claudebox prompt "explain how DNS works"
+  claudebox prompt --json "explain DNS"
   claudebox stop
   CLAUDEBOX_PORT=3001 claudebox server
 HELP
