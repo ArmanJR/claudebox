@@ -71,8 +71,8 @@ get_token_darwin() {
     printf '%s' "$token"
 }
 
-# Linux: validate credentials file, refreshing if expired.
-ensure_credentials_linux() {
+# Linux: extract OAuth token from credentials file, refreshing if expired.
+get_token_linux() {
     local creds="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
     [ -f "$creds" ] || die "No credentials at $creds. Run 'claude login' first."
 
@@ -80,10 +80,14 @@ ensure_credentials_linux() {
     raw_json=$(cat "$creds")
 
     if ! ensure_valid_credentials "$raw_json" "claude login"; then
-        [ -f "$creds" ] || die "Still no credentials after re-auth."
+        raw_json=$(cat "$creds") \
+            || die "Still no credentials after re-auth."
     fi
 
-    printf '%s' "$creds"
+    local token
+    token=$(printf '%s' "$raw_json" | json_string accessToken)
+    [ -n "$token" ] || die "Could not extract accessToken from credentials."
+    printf '%s' "$token"
 }
 
 # Populate DOCKER_AUTH_ARGS array based on platform.
@@ -104,9 +108,9 @@ build_auth_args() {
             DOCKER_AUTH_ARGS+=(-e "CLAUDE_CODE_OAUTH_TOKEN=${token}")
             ;;
         Linux)
-            local creds
-            creds=$(ensure_credentials_linux)
-            DOCKER_AUTH_ARGS+=(-v "${creds}:/run/claude-credentials:ro")
+            local token
+            token=$(get_token_linux)
+            DOCKER_AUTH_ARGS+=(-e "CLAUDE_CODE_OAUTH_TOKEN=${token}")
             ;;
         *)
             die "Unsupported platform: $PLATFORM"

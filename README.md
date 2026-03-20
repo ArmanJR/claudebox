@@ -59,21 +59,7 @@ claudebox prompt --verbose "explain DNS"    # container logs + output
 
 ### Add to your docker-compose.yml
 
-**Linux:**
-
-```yaml
-services:
-  claudebox:
-    image: ghcr.io/armanjr/claudebox:latest
-    cap_add:
-      - NET_ADMIN
-    ports:
-      - "3000:3000"
-    volumes:
-      - ~/.claude/.credentials.json:/run/claude-credentials:ro
-```
-
-**macOS** — Keychain can't be mounted, so extract the token first (re-run when it expires):
+First, extract your OAuth token (re-run when it expires):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArmanJR/claudebox/main/setup-auth.sh | bash
